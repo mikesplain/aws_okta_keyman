@@ -29,6 +29,7 @@ from builtins import input
 import colorlog
 import keyring
 import requests
+import iterfzf
 
 from aws_okta_keyman import aws, okta, okta_saml
 from aws_okta_keyman.config import Config
@@ -188,15 +189,15 @@ class Keyman:
         """
         selector_width = len(str(len(data) - 1)) + 2
         pad = " " * (selector_width + 1)
-        header_dict = Keyman.generate_header(header_map)
-        print("\n{}{}".format(pad, template.format(**header_dict)))
-        for index, item in enumerate(data):
+        for index, item in reversed(list(enumerate(data))):
             sel = "[{}]".format(index).ljust(selector_width)
-            print("{} {}".format(sel, str(template.format(**item))))
+            yield("{} {}".format(sel, str(template.format(**item))))
+        header_dict = Keyman.generate_header(header_map)
+        yield("{}{}".format(pad, str(template.format(**header_dict))))
 
     def selector_menu(self, data, header_map):
         """ Presents a menu/table to the user from which they can make a
-        selection using the index number of their choice
+        selection using the fuzyfinder
 
         Args:
         data: List of dicts where each dict is a row in the table
@@ -206,13 +207,21 @@ class Keyman:
         """
         template = self.generate_template(data, header_map)
         selection = -1
+
         while selection < 0 or selection > len(data):
-            self.print_selector_table(template, header_map, data)
             try:
-                selection = int(self.user_input("Selection: "))
+                value = iterfzf.iterfzf(
+                    self.print_selector_table(template, header_map, data),
+                    prompt="Selection: "
+                )
+                selection = int(value[value.find("[")+1:value.find("]")])
             except ValueError:
                 self.log.warning('Invalid selection, please try again')
+                self.user_input('Please press enter to retry')
                 continue
+            except AttributeError:
+                self.log.fatal('Cannot enter a blank string for any input')
+                sys.exit(1)
         print('')
         return selection
 
